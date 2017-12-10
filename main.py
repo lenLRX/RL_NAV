@@ -20,7 +20,7 @@ def test():
                 
                 myenv.set_move(i, (x,y))
         myenv.tick()
-    #print('score %d time %d remain_task %d'%(myenv.score, myenv.time, myenv.remain_task))
+    print('score %d time %d remain_task %d'%(myenv.score, myenv.time, myenv.remain_task))
     #import pdb
     #pdb.set_trace()
 

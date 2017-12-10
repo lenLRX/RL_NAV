@@ -24,9 +24,10 @@ def query_data_by_table(conn, table, day, hour, modelno = None):
     c = conn.cursor()
     try:
         c.execute('use %s;'%'data')
-        SQLstmt = 'select * from  where day=%d and hour=%d'%(day,hour)
+        SQLstmt = 'select * from %s where day=%d and hour=%d'%(table,day,hour)
         if not modelno is None:
             SQLstmt = SQLstmt + 'and %d'%modelno
+        print(SQLstmt)
         c.execute(SQLstmt)
         return c.fetchall()
     finally:

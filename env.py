@@ -9,6 +9,7 @@ class InvalidActionException(Exception):
 
 class Env(object):
     def __init__(self, tbl, day, modelno = None):
+        self.load_targets()
         self.table_name = tbl
         self.day = day
         self.modelno = modelno
@@ -28,13 +29,14 @@ class Env(object):
         for i in range(10):
             self.done.append(False)
             self.action_orders.append((0,0))
+            self.locs.append(self.start_location)
 
         conn = dbconn.get_conn()
 
         for hour in self.hours:
             self.datas.append(self.get_one_hour(conn, self.day, hour))
         
-        self.load_targets()
+        
     
     def windspeed_at(self, loc):
         return self.datas[self.get_curr_hour()][loc[0]][loc[1]]
@@ -45,22 +47,27 @@ class Env(object):
 
     def if_reach_target_or_die(self, i):
         if self.locs[i] == self.targets[i]:
+            print('%d done1!'%i)
             self.set_done(i)
             self.score = self.score + self.time * 2
+            return
         if self.windspeed_at(self.locs[i]) >= 15:
+            print('%d done2!'%i)
             self.set_done(i)
             self.score = self.score + 24 * 60
+            return
 
     def tick(self):
         for i in range(10):
             if not self.done[i]:
                 act = self.action_orders[i]
-                if abs(act[0]) > 1 or abs(act[1]):
+                if abs(act[0]) + abs(act[1]) > 1:
                     raise InvalidActionException()
                 _loc = self.locs[i]
                 self.locs[i] = (_loc[0] + act[0], _loc[1] + act[1])
                 self.if_reach_target_or_die(i)
         self.time = self.time + 1
+        print("t:%d"%self.time)
     
     def load_targets(self):
         self.targets = []
@@ -68,18 +75,18 @@ class Env(object):
         with open(os.path.join('data', 'CityData.csv'), newline='') as csvfile:
             cityreader = csv.reader(csvfile)
             for lineno,row in enumerate(cityreader):
-                loc = (row[1] - 1, row[2] - 1)
                 if lineno == 1:
+                    loc = (int(row[1]) - 1, int(row[2]) - 1)
                     self.start_location = loc
                 elif lineno > 1:
-                    self.locs.append(loc)
+                    loc = (int(row[1]) - 1, int(row[2]) - 1)
                     self.targets.append(loc)
     
     def set_move(self, i, m):
         self.action_orders[i] = m
 
     def get_curr_hour(self):
-        return self.time / self.tick_per_hour
+        return self.time // self.tick_per_hour
 
     def get_one_hour(self, conn, day, hour, modelno = None):
         h = np.zeros((548,421))

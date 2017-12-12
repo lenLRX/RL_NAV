@@ -28,7 +28,7 @@ class Env(object):
         self.done = []
         for i in range(10):
             self.done.append(False)
-            self.action_orders.append((0,0))
+            self.action_orders.append(None)
             self.locs.append(self.start_location)
 
         conn = dbconn.get_conn()
@@ -61,6 +61,9 @@ class Env(object):
         for i in range(10):
             if not self.done[i]:
                 act = self.action_orders[i]
+                #does not take off yet
+                if act is None:
+                    continue
                 if abs(act[0]) + abs(act[1]) > 1:
                     raise InvalidActionException()
                 _loc = self.locs[i]

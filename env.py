@@ -26,10 +26,14 @@ class Env(object):
 
         self.action_orders = []
         self.done = []
+        self.trajectories = []
         for i in range(10):
             self.done.append(False)
             self.action_orders.append(None)
             self.locs.append(self.start_location)
+            self.trajectories.append([])
+        
+        
 
         conn = dbconn.get_conn()
 
@@ -47,12 +51,12 @@ class Env(object):
 
     def if_reach_target_or_die(self, i):
         if self.locs[i] == self.targets[i]:
-            print('%d done1!'%i)
+            print('%d reach target!'%i)
             self.set_done(i)
             self.score = self.score + self.time * 2
             return
         if self.windspeed_at(self.locs[i]) >= 15:
-            print('%d done2!'%i)
+            print('%d crashed!'%i)
             self.set_done(i)
             self.score = self.score + 24 * 60
             return
@@ -60,6 +64,7 @@ class Env(object):
     def tick(self):
         for i in range(10):
             if not self.done[i]:
+                self.trajectories[i].append(self.locs[i])
                 act = self.action_orders[i]
                 #does not take off yet
                 if act is None:
@@ -101,3 +106,16 @@ class Env(object):
     def end(self):
         return self.time >= self.tick_per_hour * self.total_hours \
             or self.remain_task == 0
+    
+    def dump(self, path = 'result.csv'):
+        with open(path, 'w+', newline='') as csvfile:
+            writer = csv.writer(csvfile, delimiter=',')
+            for i in range(10):
+                t = 0
+                print(self.trajectories[i])
+                for loc in self.trajectories[i]:
+                    writer.writerow([i + 1, self.day,
+                        '%02d:%02d'%(t // self.tick_per_hour + 3, t % self.tick_per_hour),loc[0] + 1, loc[1] + 1])
+                    t = t + 1
+                writer.writerow([i + 1, self.day,
+                        '%02d:%02d'%(t // self.tick_per_hour + 3, t % self.tick_per_hour), self.targets[i][0] + 1, self.targets[i][1] + 1])

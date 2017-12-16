@@ -297,8 +297,10 @@ def draw_map(myenv,hour):
     plt.show()
 if __name__ == '__main__':
     import copy
-    myenv  = env.Env('tbl_TrueData',1)
+    myenv  = env.Env('tbl_TrueData4Test',6)
     testenv= copy.deepcopy(myenv)
     paths  = astar_path(testenv)
+    testenv.dump()
     draw_path(myenv,paths)
     draw_map(myenv,1)
+    

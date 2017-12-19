@@ -2,7 +2,7 @@ import env
 
 
 def test():
-    myenv = env.Env('tbl_TrueData',5)
+    myenv = env.Env('tbl_TrueData4Test',6)
     first = [True for x in range(10)]
     while not myenv.end():
         for i in range(10):

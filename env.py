@@ -26,10 +26,18 @@ class Env(object):
 
         self.action_orders = []
         self.done = []
+        self.trajectories = []
+        self.start_time = []
+        self.scores = []
         for i in range(10):
             self.done.append(False)
             self.action_orders.append(None)
             self.locs.append(self.start_location)
+            self.trajectories.append([])
+            self.start_time.append(-1)
+            self.scores.append(0)
+        
+        
 
         conn = dbconn.get_conn()
 
@@ -40,6 +48,9 @@ class Env(object):
     
     def windspeed_at(self, loc):
         return self.datas[self.get_curr_hour()][loc[0]][loc[1]]
+
+    def windspeed_at_hour(self, hour, loc):
+        return self.datas[hour][loc[0]][loc[1]]
     
     def set_done(self, i):
         self.done[i] = True
@@ -47,30 +58,69 @@ class Env(object):
 
     def if_reach_target_or_die(self, i):
         if self.locs[i] == self.targets[i]:
-            print('%d done1!'%i)
+            print('%d reach target!'%i)
             self.set_done(i)
-            self.score = self.score + self.time * 2
-            return
+            _score = self.time * 2
+            self.score = self.score + _score
+            self.scores[i] = _score
+            return 1
         if self.windspeed_at(self.locs[i]) >= 15:
-            print('%d done2!'%i)
+            print('%d crashed!'%i)
             self.set_done(i)
-            self.score = self.score + 24 * 60
-            return
+            _score = 24 * 60
+            self.score = self.score + _score
+            self.scores[i] = _score
+            return -1
+
+        return 0
 
     def tick(self):
+        m_reward = 0.01
+        rewards = []
         for i in range(10):
             if not self.done[i]:
+                self.trajectories[i].append(self.locs[i])
                 act = self.action_orders[i]
                 #does not take off yet
                 if act is None:
+                    rewards.append(0.0)
                     continue
                 if abs(act[0]) + abs(act[1]) > 1:
                     raise InvalidActionException()
+                if self.start_time[i] < 0:
+                    #record the take off time
+                    self.start_time[i] = self.time
                 _loc = self.locs[i]
                 self.locs[i] = (_loc[0] + act[0], _loc[1] + act[1])
-                self.if_reach_target_or_die(i)
+                ret = self.if_reach_target_or_die(i)
+                target = self.targets[i]
+                if 0 == ret:
+                    if act[0] > 0:
+                        if _loc[0] >= target[0]:
+                            ret = -m_reward
+                        elif _loc[0] < target[0]:
+                            ret = m_reward
+                    elif act[0] < 0:
+                        if _loc[0] <= target[0]:
+                            ret = -m_reward
+                        elif _loc[0] > target[0]:
+                            ret = m_reward
+                    elif act[1] > 0:
+                        if _loc[1] >= target[1]:
+                            ret = -m_reward
+                        elif _loc[1] < target[1]:
+                            ret = m_reward
+                    elif act[1] < 0:
+                        if _loc[1] <= target[1]:
+                            ret = -m_reward
+                        elif _loc[1] > target[1]:
+                            ret = m_reward
+                rewards.append(ret)
+            else:
+                rewards.append(None)
         self.time = self.time + 1
-        print("t:%d"%self.time)
+        print("t:%d rewards %s"%(self.time,str(rewards)))
+        return rewards
     
     def load_targets(self):
         self.targets = []
@@ -101,3 +151,16 @@ class Env(object):
     def end(self):
         return self.time >= self.tick_per_hour * self.total_hours \
             or self.remain_task == 0
+    
+    def dump(self, path = 'result.csv'):
+        with open(path, 'w+', newline='') as csvfile:
+            writer = csv.writer(csvfile, delimiter=',')
+            for i in range(10):
+                t = self.start_time[i]
+                print(self.trajectories[i])
+                for loc in self.trajectories[i]:
+                    writer.writerow([i + 1, self.day,
+                        '%02d:%02d'%(t // self.tick_per_hour + 3, t % self.tick_per_hour),loc[0] + 1, loc[1] + 1])
+                    t = t + 1
+                writer.writerow([i + 1, self.day,
+                        '%02d:%02d'%(t // self.tick_per_hour + 3, t % self.tick_per_hour), self.targets[i][0] + 1, self.targets[i][1] + 1])

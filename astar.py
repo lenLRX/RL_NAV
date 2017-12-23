@@ -146,52 +146,88 @@ class AStar():
                         # add adj cell to open list
                         heapq.heappush(self.opened,(adj_cell.f, adj_cell))
 class Astar_wrap(AStar):
-    def init_grid(self,width,height,data,start,end):
+    def init_grid(self,width,height,data,start,end,next_hour_data=None):
         """Prepare grid cells, walls.
         @param width grid's width.
         @param height grid's height.
         @param data wind speed data list of x,y tuples.
         @param start grid starting point x,y tuple.
         @param end grid ending point x,y tuple.
+        @param next_hour_data wind speed data for next hour x,y tuples
         """
         self.grid_height = height
         self.grid_width = width
+        if next_hour_data is None:
+            next_hour_data = data
         for x in range(self.grid_width):
             for y in range(self.grid_height):
                 if data[x][y] >= 15 :
                     reachable = False
                 else:
-                    reachable = True
+                    target_dis = abs(end[0] - start[0]) + abs(end[1] - start[1])
+                    pot_dis = abs(x - start[0]) + abs(y - start[1])
+                    if target_dis > 30:
+                        #why 30? because it can only run 30 steps every hour
+                        if pot_dis == 30 and next_hour_data[x][y] >= 15:
+                            reachable = False
+                        else:
+                            reachable = True
+                    else:
+                        if (pot_dis == target_dis and next_hour_data[x][y] >= 15) or (pot_dis == 30 and next_hour_data[x][y] >= 15):
+                            reachable = False
+                        else:
+                            reachable = True
                 self.cells.append(Cell(x, y, reachable))
         self.start = self.get_cell(*start)
         self.end = self.get_cell(*end) 
-def handle_path_none(data,start,end): 
+class Block():
+    def __init__(self, x, y ,f):
+        """Initialize new block.
+        @param x cell x coordinate
+        @param y cell y coordinate
+        @param f distance to target
+        """
+        self.x = x
+        self.y = y
+        self.f = f
+    # <
+    def __lt__(self,other):
+        return self.f < other.f
+def handle_path_none(data,start,end,next_hour_data=None): 
     """When path is none between start and end,reset the target at middle point.
     @param data wind speed data list of x,y tuples.
     @param start grid starting point x,y tuple.
-    @param end grid ending point x,y tuple."""
+    @param end grid ending point x,y tuple.
+    @param next_hour_data wind speed data for next hour."""
     temp_target = list(end[:2])
     path = None
     print("Handle path none at target:",end)
-    count = 0
-    while path is None:
-        count = count + 1
-        temp_target[0] = (start[0] + temp_target[0]) // 2
-        temp_target[1] = (start[1] + temp_target[1]) // 2
-        if data[temp_target[0]][temp_target[1]] >= 15:
-            if count > 200:
-                return [start]
-            #if target is not reachable,try next middle point
-            if start[0] == temp_target[0] and start[1] == temp_target[1]:
-                return [start]
-            continue
+    if next_hour_data is None:
+        next_hour_data = data
+    point_list = []
+    for x in range(-30+start[0],31+start[0]):
+        for y in range(-30+start[1],31+start[1]):
+            if x > 548-1 or y > 421-1 or x <0 or y<0:
+                continue
+            if (abs(x-start[0])+abs(y-start[1]))>30:
+                continue
+            if next_hour_data[x][y] <15 and data[x][y] <15:
+                blk = Block(x,y,abs(x-end[0])+abs(y-end[1]))
+                heapq.heappush(point_list,(blk.f, blk))           
+    while len(point_list):
+        f, blk = heapq.heappop(point_list)
+        temp_target[0] = blk.x
+        temp_target[1] = blk.y
         if start[0] == temp_target[0] and start[1] == temp_target[1]:#if start and target is the same,return start point
+            print("start is the same as target!",start)
             return [start]
         print("Set target at:",temp_target)
         astar = Astar_wrap()
-        astar.init_grid(548,421,data, start,temp_target)
+        astar.init_grid(548,421,data, start,temp_target,next_hour_data)
         path = astar.solve()
-    return path
+        if path is not None:
+            return path
+    return path#Dead Way!
 def astar_path(myenv):
     """A start path finding
     @param myenv Env class to start the fram class
@@ -199,6 +235,7 @@ def astar_path(myenv):
     paths = {item:[] for item in range(10)}
     path_record = {item:[] for item in range(10)}
     starts = []
+    first = [True for x in range(10)]
     for j in range(10):
         starts.append(myenv.start_location)
     print("time:",myenv.time,"tick_per_hour",myenv.tick_per_hour)
@@ -206,24 +243,47 @@ def astar_path(myenv):
         times_pass = myenv.time % myenv.tick_per_hour
         for i in range(10):
             if not myenv.done[i]:
+                loc = myenv.locs[i]
+                if first[i] and myenv.windspeed_at(loc) >= 15.0:
+                    #do not take off
+                    continue
+                else:
+                    first[i] = False
                 #change map and get path every hour start
                 if times_pass == 0:
                     print('path calculate in %d path at %d hour'%(i,myenv.get_curr_hour()))
                     astar = Astar_wrap() 
                     #set map, start, end
                     print("start:",starts[i],"target:",myenv.targets[i])
-                    astar.init_grid(548, 421, myenv.datas[myenv.get_curr_hour()], starts[i], myenv.targets[i]) 
+                    hour = myenv.get_curr_hour()
+                    if hour == 17:
+                        astar.init_grid(548, 421, myenv.datas[hour], starts[i], myenv.targets[i])
+                    else:
+                        astar.init_grid(548, 421, myenv.datas[hour], starts[i], myenv.targets[i],myenv.datas[hour+1]) 
                     #get A star path
                     paths[i]=astar.solve()
                     if paths[i] is None:
                         #it needs a function to handle none solution
-                        print("None Solution in %d path at %d hour "%(i,myenv.get_curr_hour()))
-                        #do not move
-                        paths[i] =handle_path_none(myenv.datas[myenv.get_curr_hour()],starts[i],myenv.targets[i])
-                        #stand still 
-                        while len(paths[i]) <= 30:
-                            paths[i].append(paths[i][-1])
-                    if len(paths[i]) > 30 :
+                        hour = myenv.get_curr_hour()
+                        print("None Solution in %d path at %d hour "%(i,hour))
+                        if hour == 17:
+                            paths[i] =handle_path_none(myenv.datas[hour],starts[i],myenv.targets[i])
+                        else:
+                            paths[i] =handle_path_none(myenv.datas[hour],starts[i],myenv.targets[i],myenv.datas[hour+1])
+                        if paths[i] is None:
+                            print("Dead Way!!!")
+                            paths[i] = [starts[i]]
+                        if len(paths[i]) == 1 and paths[i][0] == myenv.start_location:
+                            #when the path is the same with the start,do not take off
+                            paths[i] = [None for i in range(31)]
+                            starts[i] = myenv.start_location
+                            continue
+                    #stand still 
+                    while len(paths[i]) <= 30:
+                        if paths[i][-1] is not None:
+                            starts[i] = paths[i][-1]
+                        paths[i].append(paths[i][-1])
+                    if len(paths[i]) > 30 and paths[i][0] is not None:
                         #when we can not reach target in one hour ,we need reset the start position for the next hour
                         starts[i] = paths[i][30]
                         paths[i]=paths[i][:31]
@@ -231,19 +291,22 @@ def astar_path(myenv):
                 #change position into action_orders start
                 if times_pass > len(paths[i])-1:
                     print("time_pass:",times_pass,"paths:",len(paths[i]))
-                now_loc = paths[i][times_pass]
-                tar_loc = paths[i][times_pass+1]
-                x,y=(0,0)
-                if now_loc[0] > tar_loc[0]:
-                    x = -1
-                elif now_loc[1] > tar_loc[1]:
-                    y = -1
-                elif now_loc[0] < tar_loc[0]:
-                    x = 1
-                elif now_loc[1] < tar_loc[1]:
-                    y = 1
-                #change position into action_orders end
-                myenv.set_move(i, (x,y))
+                if paths[i][times_pass] is None:
+                    myenv.set_move(i, None)
+                else:
+                    now_loc = paths[i][times_pass]
+                    tar_loc = paths[i][times_pass+1]
+                    x,y=(0,0)
+                    if now_loc[0] > tar_loc[0]:
+                        x = -1
+                    elif now_loc[1] > tar_loc[1]:
+                        y = -1
+                    elif now_loc[0] < tar_loc[0]:
+                        x = 1
+                    elif now_loc[1] < tar_loc[1]:
+                        y = 1
+                    #change position into action_orders end
+                    myenv.set_move(i, (x,y))
         myenv.tick()
         for i in range(10):
             path_record[i].append(myenv.locs[i])

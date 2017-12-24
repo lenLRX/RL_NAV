@@ -6,7 +6,7 @@
 import env
 
 import matplotlib.pyplot as plt
-import seaborn as sns
+#import seaborn as sns
 
 import heapq
 import numpy as np
@@ -27,6 +27,7 @@ class latticeObj(object):
     
     def reset(self):
         self.from_loc = None
+        self.best_t = -1
         self.t = {
             (self.loc[0] - 1, self.loc[1]) : -1,
             (self.loc[0] + 1, self.loc[1]) : -1,
@@ -41,10 +42,10 @@ class latticeObj(object):
         }
 
     def __str__(self):
-        return "loc(%d,%d) t=%d"%(self.loc[0], self.loc[1], self.t)
+        return "loc(%d,%d) time %d from_t=%s"%(self.loc[0], self.loc[1], self.best_t, str(self.t))
 
     def __repr__(self):
-        return "loc(%d,%d) t=%d"%(self.loc[0], self.loc[1], self.t)
+        return "loc(%d,%d) time %d from_t=%s"%(self.loc[0], self.loc[1], self.best_t, str(self.t))
 
 
 class BFSolver(object):
@@ -54,10 +55,6 @@ class BFSolver(object):
         self.init_lattice()
         self.src = self.env.start_location
         self.dest = dest
-
-        #直接起飞，延迟起飞由“坠毁重置”模拟
-        self.lattice[self.src[0]][self.src[1]].t = 0
-
     
     def init_lattice(self):
         self.lattice = []
@@ -74,57 +71,59 @@ class BFSolver(object):
     #尝试是否能飞到相邻的格子
     def test_loc(self, loc, from_loc):
         obj = self.lattice[loc[0]][loc[1]]
+        from_obj = self.lattice[from_loc[0]][from_loc[1]]
         #这个地方还没从这个方向来过，并且没有被禁用
         if obj.t[from_loc] < 0 and self.get_windspeed(loc) < 15.0 and from_obj.leave_t[obj.loc] != INVALID:
-            obj.t[from_loc] = self.t + 1
-            obj.from_loc = from_loc
+            _t = self.t + 1
+            obj.t[from_loc] = _t
+            from_obj.leave_t[obj.loc] = _t
+            if obj.best_t < 0:
+                obj.best_t = _t
 
-            from_obj = self.lattice[from_loc[0]][from_loc[1]]
-            from_obj.leave_t[obj.loc] = obj.t
     
+    def crash_dead_route(self,loc):
+        from_obj = self.lattice[loc[0]][loc[1]]
+        #print(from_obj)
+        if self.get_windspeed(from_obj.loc) >= 15.0:
+            #如果from_obj没有离开的路径,说明它正在悬停，坠毁！
+            out_num = 0
+            for k in from_obj.leave_t:
+                if from_obj.leave_t[k] >= 0:
+                    #之前已经飞走了，不做处理
+                    out_num = out_num + 1
+                else:
+                    #这个方向之后都不允许飞了
+                    from_obj.leave_t[k] = INVALID
+            
+            #如果这里坠毁，继续向上回溯
+            if out_num == 0:
+                #追踪每个来源
+                for origin in from_obj.t:
+                    #递归处理每个来源
+                    if from_obj.t[origin] >= 0:
+                        self.crash_dead_route(origin)
+                #需要重置此节点状态，之后还是可以飞过来的
+                from_obj.reset()
+
     #每到一个整点，风速变了，需要把所有风速超过15地方的飞机打下来
     def crash_reset(self):
         for i in range(self.env.dims[0]):
             for j in range(self.env.dims[1]):
-                obj = self.lattice[loc[0]][loc[1]]
-                if self.get_windspeed(loc) >= 15.0 
-                    for origin in obj.t:
-                        #在这一时刻飞过来的方向都需要回溯
-                        if obj.t[origin] == self.t:
-                            obj.t[origin]= -1
-
-                            #来源
-                            from_obj = self.lattice[origin[0]][origin[1]]
-                            #上游
-                            from_obj.leave_t[obj.loc] = -1
-                            #如果上游风也大
-                            while self.get_windspeed(from_obj.loc) >= 15.0:
-                                #如果from_obj没有离开的路径,说明它正在悬停，坠毁！
-                                out_num = 0
-                                for k in from_obj.leave_t:
-                                    if from_obj.leave_t[k] >= 0:
-                                        out_num = out_num + 1
-                                    else:
-                                        #这个方向之后都不允许飞了
-                                        from_obj.leave_t[k] = INVALID
-                                
-                                prev_from_obj = from_obj.from_obj
-                                #如果这里坠毁，继续向上回溯
-                                if out_num == 0:
-                                    #需要重置此节点状态，之后还是可以飞过来的
-                                    from_obj.reset()
-                                    prev_from_obj.pop(from_obj)
-                                    from_obj = prev_from_obj
-                                else:
-                                    break
+                self.crash_dead_route((i,j))
 
     def solve(self):
         for self.t in range(0,self.env.total_hours * self.env.tick_per_hour):
             print(self.t)
+            if self.t % self.env.tick_per_hour == 0:
+                self.crash_reset()
+                p = self.lattice[self.src[0]][self.src[1]]
+                if p.best_t < 0 and self.get_windspeed(self.src) < 15.0:
+                    #起飞,整点才起飞
+                    p.best_t = self.t
             for i in range(self.env.dims[0]):
                 for j in range(self.env.dims[1]):
                     #除了还没到过的地方和下一时刻才到的地方
-                    if self.lattice[i][j].t < 0 or self.lattice[i][j].t > self.t:
+                    if self.lattice[i][j].best_t < 0 or self.lattice[i][j].best_t > self.t:
                         continue
                     #left
                     if i - 1 >= 0:
@@ -147,7 +146,7 @@ class BFSolver(object):
         return self.lattice[self.dest[0]][self.dest[1]]
 
     def dump(self):
-        with open("result.csv", 'w+', newline='') as csvfile:
+        with open("result.csv", 'a+', newline='') as csvfile:
             writer = csv.writer(csvfile, delimiter=',')
             for i in range(10):
                 loc = self.env.targets[i]
@@ -156,29 +155,34 @@ class BFSolver(object):
                     continue
                 
                 #到了终点
-                if self.lattice[loc[0]][loc[1]].t > 0:
+                if self.lattice[loc[0]][loc[1]].best_t > 0:
                     path = []
                     while True:
                         obj = self.lattice[loc[0]][loc[1]]
+                        print(obj)
                         path.append(obj)
-                        loc = obj.from_loc
-                        if loc is None:
+                        if loc == self.src:
                             break
+                        #看哪边过来的最早就往哪边回溯
+                        for origin in obj.t:
+                            if obj.t[origin] == obj.best_t:
+                                loc = origin
+                                break
                 
                     fwd_path = list(reversed(path))
-
+                    #起点先输出一行
                     #终点不太一样，它的离开时间对于输出路径没有意义
-                    for idx in range(len(fwd_path) - 1):
+                    for idx in range(0,len(fwd_path) - 1):
                         obj = fwd_path[idx]
                         #从到达到离开的时间都要输出
                         #需要指定具体去哪的时间
-                        for t in range(obj.t, obj.leave_t[fwd_path[idx + 1].loc]):
+                        for t in range(obj.best_t, fwd_path[idx + 1].best_t):
                             writer.writerow([i + 1, self.env.day,
-                                '%02d:%02d'%(t // self.env.tick_per_hour + 3, t % self.env.tick_per_hour), obj.loc[0] + 1, obj.loc[1] + 1])
+                                '%02d:%02d'%(t // self.env.tick_per_hour + 3, (t % self.env.tick_per_hour) * 2), obj.loc[0] + 1, obj.loc[1] + 1])
                     #终点再输出一行
                     fin = fwd_path[-1]
                     writer.writerow([i + 1, self.env.day,
-                        '%02d:%02d'%(fin.t // self.env.tick_per_hour + 3, fin.t % self.env.tick_per_hour), fin.loc[0] + 1, fin.loc[1] + 1])
+                        '%02d:%02d'%(fin.best_t // self.env.tick_per_hour + 3, (fin.best_t % self.env.tick_per_hour) * 2), fin.loc[0] + 1, fin.loc[1] + 1])
 
     def draw_path(self):
         color={
@@ -211,7 +215,9 @@ class BFSolver(object):
 def main(env):
     solver = BFSolver(env,env.targets[0])
     solver.solve()
+    solver.dump()
 
 if __name__ == '__main__':
-    myenv = env.Env('tbl_TrueData4Test',6)
-    main(myenv)
+    for i in range(6,11):
+        myenv = env.Env('tbl_TrueData4Test',i)
+        main(myenv)

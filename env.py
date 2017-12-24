@@ -9,6 +9,7 @@ class InvalidActionException(Exception):
 
 class Env(object):
     def __init__(self, tbl, day, modelno = None):
+        self.dims = [548,421]
         self.load_targets()
         self.table_name = tbl
         self.day = day

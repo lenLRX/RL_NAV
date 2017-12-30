@@ -13,19 +13,32 @@ import csv
 
 import time
 
+tensor_type = torch.FloatTensor
+
+if torch.cuda.is_available():
+    tensor_type = torch.cuda.FloatTensor
+
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
         self.in_dim = 11
         self.h_dim = 20
+        self.layer_num = 5
         self.out_dim = 1
 
         #input layer
         self.input_layer = nn.Linear(self.in_dim, self.h_dim)
         self.init_layer(self.input_layer)
 
-        self.hidden_layer = nn.Linear(self.h_dim, self.out_dim)
-        self.init_layer(self.hidden_layer)
+        self.hidden_layers = []
+
+        for i in range(self.layer_num):
+            _layer = nn.Linear(self.h_dim, self.h_dim)
+            self.init_layer(_layer)
+            self.hidden_layers.append(_layer)
+
+        self.output_layer = nn.Linear(self.h_dim, self.out_dim)
+        self.init_layer(self.output_layer)
 
         # mode
         self.train()
@@ -35,8 +48,10 @@ class Model(nn.Module):
         init.constant(layer.bias, 0.01)
 
     def forward(self,inputs):
-        h1 = self.input_layer(inputs)
-        out = self.hidden_layer(h1)
+        h = self.input_layer(inputs)
+        for _layer in self.hidden_layers:
+            h = F.sigmoid(h)
+        out = self.output_layer(h)
         return out
 
 upd_batch = 1000
@@ -139,7 +154,7 @@ class DataProvider(object):
                 np.random.shuffle(self.idx)
                 
                 pred_data = [self.buffer[i] for i in self.idx[0:batch_size]]
-                real_data = [self.buffer[i] for i in self.idx[0:batch_size]]
+                real_data = [self.real_data[i] for i in self.idx[0:batch_size]]
                 return np.vstack(pred_data), np.asarray(real_data)
             time.sleep(1)
     
@@ -150,12 +165,17 @@ def training_task():
     provider = DataProvider(fpath,frealpath)
 
     model = Model()
+    if torch.cuda.is_available():
+        model = model.cuda()
+        print('using cuda')
+    else:
+        print('using cpu')
     optimizer = optim.SGD(model.parameters(), lr = 1E-5, momentum=0.9)
     while True:
         optimizer.zero_grad()
-        data_, label_ = provider.get(102400)
-        var_label_ = Variable(torch.FloatTensor(label_))
-        var_data_ = Variable(torch.FloatTensor(data_))
+        data_, label_ = provider.get(1024)
+        var_label_ = Variable(tensor_type(label_))
+        var_data_ = Variable(tensor_type(data_))
         out_ = model(var_data_)
         loss = (out_ - var_label_) ** 2
         loss = torch.mean(loss)

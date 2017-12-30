@@ -16,7 +16,7 @@ import time
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
-        self.in_dim = 10
+        self.in_dim = 11
         self.h_dim = 20
         self.out_dim = 1
 
@@ -35,7 +35,7 @@ class Model(nn.Module):
         init.constant(layer.bias, 0.01)
 
     def forward(self,inputs):
-        h1 = F.relu(self.input_layer(inputs))
+        h1 = self.input_layer(inputs)
         out = self.hidden_layer(h1)
         return out
 
@@ -52,9 +52,11 @@ def loading_origin_fn(fpath, buffer, mutex):
             if row_num == 1:
                 continue
             #print(row)
+            hour = float(row[-3])
             pack.append(float(row[-1]))
             #10 row a pack
             if 0 == (row_num - 1) % 10:
+                pack.append(hour / 24.0)
                 _itm = np.asarray(pack)
                 batch.append(_itm)
                 pack = []
@@ -148,7 +150,7 @@ def training_task():
     provider = DataProvider(fpath,frealpath)
 
     model = Model()
-    optimizer = optim.SGD(model.parameters(), lr = 0.001, momentum=0.9)
+    optimizer = optim.SGD(model.parameters(), lr = 1E-5, momentum=0.9)
     while True:
         optimizer.zero_grad()
         data_, label_ = provider.get(102400)
@@ -160,7 +162,7 @@ def training_task():
         print(loss)
         loss.backward()
         optimizer.step()
-
+        torch.save(model.state_dict(),'saved_model')
 
 
 if __name__ == '__main__':

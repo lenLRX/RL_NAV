@@ -35,7 +35,7 @@ class Model(nn.Module):
         init.constant(layer.bias, 0.01)
 
     def forward(self,inputs):
-        h1 = self.input_layer(inputs)
+        h1 = F.relu(self.input_layer(inputs))
         out = self.hidden_layer(h1)
         return out
 
@@ -91,6 +91,7 @@ def shuffle_fn(buffer, mutex):
         time.sleep(1)
         with mutex:
             np.random.shuffle(buffer)
+            print('shuffle!')
 
 class DataProvider(object):
     '''
@@ -147,10 +148,10 @@ def training_task():
     provider = DataProvider(fpath,frealpath)
 
     model = Model()
-    optimizer = optim.SGD(model.parameters(), lr = 0.0001, momentum=0.9)
+    optimizer = optim.SGD(model.parameters(), lr = 0.001, momentum=0.9)
     while True:
         optimizer.zero_grad()
-        data_, label_ = provider.get(1024)
+        data_, label_ = provider.get(102400)
         var_label_ = Variable(torch.FloatTensor(label_))
         var_data_ = Variable(torch.FloatTensor(data_))
         out_ = model(var_data_)

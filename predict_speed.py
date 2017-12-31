@@ -23,7 +23,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.in_dim = 11
         self.h_dim = 20
-        self.layer_num = 5
+        self.layer_num = 1
         self.out_dim = 1
 
         #input layer
@@ -50,7 +50,7 @@ class Model(nn.Module):
     def forward(self,inputs):
         h = self.input_layer(inputs)
         for _layer in self.hidden_layers:
-            h = F.sigmoid(h)
+            h = F.relu(h)
         out = self.output_layer(h)
         return out
 
@@ -104,8 +104,9 @@ def loading_true_fn(fpath, buffer, mutex):
 
 
 def shuffle_fn(buffer, mutex):
+    return
     while True:
-        time.sleep(1)
+        time.sleep(1000)
         with mutex:
             np.random.shuffle(buffer)
             print('shuffle!')
@@ -149,19 +150,18 @@ class DataProvider(object):
                 #print(buffer_len)
                 if buffer_len < batch_size:
                     continue
-                if not self.load_finished:
-                    self.idx = [x for x in range(buffer_len)]
-                np.random.shuffle(self.idx)
-                
-                pred_data = [self.buffer[i] for i in self.idx[0:batch_size]]
-                real_data = [self.real_data[i] for i in self.idx[0:batch_size]]
+                self.idx = np.random.randint(buffer_len, size=batch_size)                
+                pred_data = [self.buffer[i] for i in self.idx]
+                real_data = [self.real_data[i] for i in self.idx]
                 return np.vstack(pred_data), np.asarray(real_data)
             time.sleep(1)
     
 
 def training_task():
-    fpath = os.path.join('data', 'ForecastDataforTraining_20171205', 'ForecastDataforTraining_201712.csv')
-    frealpath = os.path.join('data', 'In_situMeasurementforTraining_20171205', 'In_situMeasurementforTraining_201712.csv')
+    #fpath = os.path.join('data', 'ForecastDataforTraining_20171205', 'ForecastDataforTraining_201712.csv')
+    #frealpath = os.path.join('data', 'In_situMeasurementforTraining_20171205', 'In_situMeasurementforTraining_201712.csv')
+    fpath = '/root/ForecastDataforTraining_201712.csv'
+    frealpath = '/root/In_situMeasurementforTraining_201712.csv'
     provider = DataProvider(fpath,frealpath)
 
     model = Model()
@@ -173,7 +173,8 @@ def training_task():
     optimizer = optim.SGD(model.parameters(), lr = 1E-5, momentum=0.9)
     while True:
         optimizer.zero_grad()
-        data_, label_ = provider.get(1024)
+        data_, label_ = provider.get(20000)
+        t1 = time.time()
         var_label_ = Variable(tensor_type(label_))
         var_data_ = Variable(tensor_type(data_))
         out_ = model(var_data_)

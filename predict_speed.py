@@ -24,7 +24,7 @@ class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
         self.in_dim = 13
-        self.h_dim = 20
+        self.h_dim = 40
         self.layer_num = 5
         self.out_dim = 1
 
@@ -59,7 +59,7 @@ class Model(nn.Module):
         init.constant(layer.bias, 0.01)
 
     def forward(self,inputs):
-        f = F.sigmoid
+        f = F.relu
         h = f(self.input_layer_bn(self.input_layer(inputs)))
         for i in range(self.layer_num):
             h = self.hidden_layers[i](h)
@@ -84,6 +84,7 @@ def loading_origin_fn(fpath, buffer, mutex):
             pack.append(float(row[-1]) / 15.0)
             #10 row a pack
             if 0 == (row_num - 1) % 10:
+                #pack = [np.average(pack)]
                 pack.append(float(row[0]) / 548.0)
                 pack.append(float(row[0]) / 421.0)
                 pack.append(hour / 24.0)
@@ -170,7 +171,7 @@ class DataProvider(object):
                 real_data = [self.real_data[i] for i in self.idx]
                 return np.vstack(pred_data), np.asarray(real_data)
             time.sleep(1)
-    
+
 
 def training_task():
     #fpath = os.path.join('data', 'ForecastDataforTraining_20171205', 'ForecastDataforTraining_201712.csv')
@@ -185,20 +186,29 @@ def training_task():
         print('using cuda')
     else:
         print('using cpu')
-    optimizer = optim.Adam(model.parameters(), lr = 1E-3)
+    optimizer = optim.Adam(model.parameters(), lr = 1E-1)
+    loss_fn = torch.nn.MSELoss()
+    batch_size = 10000
+    count = 0
     while True:
         optimizer.zero_grad()
-        data_, label_ = provider.get(5000)
+        data_, label_ = provider.get(batch_size)
         t1 = time.time()
         var_label_ = Variable(tensor_type(label_))
         var_data_ = Variable(tensor_type(data_))
         out_ = model(var_data_)
-        loss = (out_ - var_label_) ** 2
-        loss = torch.mean(loss)
-        print(loss.data[0], out_.data[0][0], label_.data[0])
+        loss = loss_fn(out_, var_label_)
+        #标签中风速是否大于15
+        label_flag = (var_label_.data.cpu() > 1).view(-1)
+        #计算出来风速是否大于15
+        out_flag = (out_.data.cpu() > 1).view(-1)
+
+        print("%d loss = %f acc = %f"%(count,loss.data[0],torch.sum(label_flag == out_flag) / batch_size))
         loss.backward()
         optimizer.step()
-        torch.save(model.state_dict(),'saved_model')
+        if count % 100 == 0:
+            torch.save(model.state_dict(),'./model/saved_model_%d'%count)
+        count = count + 1
 
 
 if __name__ == '__main__':

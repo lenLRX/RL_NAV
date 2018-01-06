@@ -15,30 +15,41 @@ import time
 
 tensor_type = torch.FloatTensor
 
-if torch.cuda.is_available():
+use_cuda = True and torch.cuda.is_available()
+
+if use_cuda:
     tensor_type = torch.cuda.FloatTensor
 
 class Model(nn.Module):
     def __init__(self):
         super(Model, self).__init__()
-        self.in_dim = 11
+        self.in_dim = 13
         self.h_dim = 20
-        self.layer_num = 1
+        self.layer_num = 5
         self.out_dim = 1
 
+        
         #input layer
         self.input_layer = nn.Linear(self.in_dim, self.h_dim)
         self.init_layer(self.input_layer)
+        self.input_layer_bn = nn.BatchNorm1d(self.h_dim)
 
         self.hidden_layers = []
+        self.hidden_bns = []
 
         for i in range(self.layer_num):
             _layer = nn.Linear(self.h_dim, self.h_dim)
-            self.init_layer(_layer)
+            setattr(self, "hidden_layer_%d"%i, _layer)
             self.hidden_layers.append(_layer)
+            self.init_layer(_layer)
+            _layer_bn = nn.BatchNorm1d(self.h_dim)
+            setattr(self, "hidden_bn_%d"%i, _layer_bn)
+            self.hidden_bns.append(_layer_bn)
+
 
         self.output_layer = nn.Linear(self.h_dim, self.out_dim)
         self.init_layer(self.output_layer)
+        
 
         # mode
         self.train()
@@ -48,13 +59,15 @@ class Model(nn.Module):
         init.constant(layer.bias, 0.01)
 
     def forward(self,inputs):
-        h = self.input_layer(inputs)
-        for _layer in self.hidden_layers:
-            h = F.relu(h)
+        f = F.sigmoid
+        h = f(self.input_layer_bn(self.input_layer(inputs)))
+        for i in range(self.layer_num):
+            h = self.hidden_layers[i](h)
+            h = f(self.hidden_bns[i](h))
         out = self.output_layer(h)
         return out
 
-upd_batch = 1000
+upd_batch = 10000
 
 def loading_origin_fn(fpath, buffer, mutex):
     with open(fpath, newline='') as csvfile:
@@ -68,9 +81,11 @@ def loading_origin_fn(fpath, buffer, mutex):
                 continue
             #print(row)
             hour = float(row[-3])
-            pack.append(float(row[-1]))
+            pack.append(float(row[-1]) / 15.0)
             #10 row a pack
             if 0 == (row_num - 1) % 10:
+                pack.append(float(row[0]) / 548.0)
+                pack.append(float(row[0]) / 421.0)
                 pack.append(hour / 24.0)
                 _itm = np.asarray(pack)
                 batch.append(_itm)
@@ -92,7 +107,7 @@ def loading_true_fn(fpath, buffer, mutex):
             row_num = row_num + 1
             if row_num == 1:
                 continue
-            batch.append(float(row[-1]))
+            batch.append(float(row[-1]) / 15.0)
             if len(batch) >= upd_batch:
                 with mutex:
                     buffer.extend(batch)
@@ -160,27 +175,27 @@ class DataProvider(object):
 def training_task():
     #fpath = os.path.join('data', 'ForecastDataforTraining_20171205', 'ForecastDataforTraining_201712.csv')
     #frealpath = os.path.join('data', 'In_situMeasurementforTraining_20171205', 'In_situMeasurementforTraining_201712.csv')
-    fpath = '/root/ForecastDataforTraining_201712.csv'
-    frealpath = '/root/In_situMeasurementforTraining_201712.csv'
+    fpath = './data/ForecastDataforTraining_20171205/ForecastDataforTraining_201712.csv'
+    frealpath = './data/In_situMeasurementforTraining_20171205/In_situMeasurementforTraining_201712.csv'
     provider = DataProvider(fpath,frealpath)
 
     model = Model()
-    if torch.cuda.is_available():
+    if use_cuda:
         model = model.cuda()
         print('using cuda')
     else:
         print('using cpu')
-    optimizer = optim.SGD(model.parameters(), lr = 1E-5, momentum=0.9)
+    optimizer = optim.Adam(model.parameters(), lr = 1E-3)
     while True:
         optimizer.zero_grad()
-        data_, label_ = provider.get(20000)
+        data_, label_ = provider.get(5000)
         t1 = time.time()
         var_label_ = Variable(tensor_type(label_))
         var_data_ = Variable(tensor_type(data_))
         out_ = model(var_data_)
         loss = (out_ - var_label_) ** 2
         loss = torch.mean(loss)
-        print(loss)
+        print(loss.data[0], out_.data[0][0], label_.data[0])
         loss.backward()
         optimizer.step()
         torch.save(model.state_dict(),'saved_model')

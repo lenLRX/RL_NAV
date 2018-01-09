@@ -211,5 +211,111 @@ def training_task():
         count = count + 1
 
 
+
+def export_pred(model_path):
+    model = Model()
+    model.load_state_dict(torch.load(model_path))
+    fpath = './data/ForecastDataforTesting_20171205/ForecastDataforTesting_201712.csv'
+    out_csv = './pred.csv'
+    out_fp = open(out_csv, 'w+', newline='')
+
+    def write_batch(model, csv_writer, batch, batch_row):
+        var_data = np.vstack(batch)
+        var_data = Variable(torch.FloatTensor(var_data))
+        out_ = model(var_data)
+        for i in range(len(batch)):
+            csv_writer.writerow(batch_row[i][0:4] + [str(out_.data[i][0])])
+
+    with open(fpath, newline='') as csvfile:
+        testreader = csv.reader(csvfile)
+        testwriter = csv.writer(out_fp,delimiter=',')
+        testwriter.writerow(['x', 'y', 'day', 'hour', 'windspeed'])
+        row_num = 0
+        batch = []
+        batch_rows = []
+        pack = []
+        batch_size = 100000
+        for row in testreader:
+            row_num = row_num + 1
+            if row_num == 1:
+                continue
+            #print(row)
+            hour = float(row[-3])
+            pack.append(float(row[-1]) / 15.0)
+            #10 row a pack
+            if 0 == (row_num - 1) % 10 and row_num > 10:
+                pack.append(float(row[0]) / 548.0)
+                pack.append(float(row[0]) / 421.0)
+                pack.append(hour / 24.0)
+                _itm = np.asarray(pack)
+                batch.append(_itm)
+                batch_rows.append(row)
+                pack = []
+                
+            
+            if 0 == (row_num - 1) % batch_size and row_num > 10:
+                write_batch(model, testwriter, batch, batch_rows)
+                batch.clear()
+                batch_rows.clear()
+                print((row_num - 1) / (548.0 * 421.0 * 18 * 5 * 10))
+
+        write_batch(model, testwriter, batch, batch_rows)
+        print("data done %d"%(row_num))
+
+def export_pred_to_data(model_path):
+    model = Model()
+    model.load_state_dict(torch.load(model_path))
+    fpath = './data/ForecastDataforTesting_20171205/ForecastDataforTesting_201712.csv'
+
+    ret = {}
+
+    for day in range(6, 11):
+        ret[str(day)] = []
+        for i in range(18):
+            ret[str(day)].append(np.zeros((548,421)))
+
+    def write_batch(model, data_set, batch, batch_row):
+        var_data = np.vstack(batch)
+        var_data = Variable(torch.FloatTensor(var_data))
+        out_ = model(var_data)
+        for i in range(len(batch)):
+            row = batch_row[i]
+            data_set[row[2]][int(row[3]) - 3][int(row[0]) - 1][int(row[1]) - 1] = out_.data[i][0]
+
+    with open(fpath, newline='') as csvfile:
+        testreader = csv.reader(csvfile)
+        row_num = 0
+        batch = []
+        batch_rows = []
+        pack = []
+        batch_size = 100000
+        for row in testreader:
+            row_num = row_num + 1
+            if row_num == 1:
+                continue
+            #print(row)
+            hour = float(row[-3])
+            pack.append(float(row[-1]) / 15.0)
+            #10 row a pack
+            if 0 == (row_num - 1) % 10:
+                pack.append(float(row[0]) / 548.0)
+                pack.append(float(row[0]) / 421.0)
+                pack.append(hour / 24.0)
+                _itm = np.asarray(pack)
+                batch.append(_itm)
+                batch_rows.append(row)
+                pack = []
+                
+            
+            if 0 == (row_num - 1) % batch_size:
+                write_batch(model, ret, batch, batch_rows)
+                batch.clear()
+                batch_rows.clear()
+                print((row_num - 1) / (548.0 * 421.0 * 18 * 5 * 10))
+
+        write_batch(model, ret, batch, batch_rows)
+        print("data done %d"%(row_num))
+        return ret
+
 if __name__ == '__main__':
     training_task()

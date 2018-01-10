@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from matplotlib.pyplot import plot,savefig
 from matplotlib.pyplot import cm
 
+import pandas as pd
+
 '''''
 这里是把训练数据的十个模型与真值做差，看看哪个模型比较好
 '''''
@@ -54,28 +56,45 @@ def load_data(filePath,tfilePath):
             TruthData[date][hour][x_id][y_id] = wind
 
 def drawDifference(filePath,tfilePath):
-    load_data(filePath,tfilePath)
+    Data = pd.read_csv(filePath)
+    Data = Data['wind'].values.reshape((DATE,HOUR,X,Y,MODULE))
+    # x => m
+    Data = np.swapaxes(Data,2,4)
+    # x => y
+    Data = np.swapaxes(Data,3,4)
+    TruthData = pd.read_csv(tfilePath)
+    TruthData = TruthData['wind'].values.reshape((DATE,HOUR,X,Y))
+
+    print('read done')
     
     differ = np.zeros((X,Y))
 
     for d in range(DATE):
         for h in range(HOUR):
+            AVG = np.zeros((X,Y))
             for m in range(MODULE):
-                sum = 0
-                max = 0
-                for x in range(X):
-                    for y in range(Y):
-                        differ[x][y] = Data[d][h][x][y][m]-TruthData[d][h][x][y]
-                        sum = sum +abs(differ[x][y])
-                        if max < abs(differ[x][y]):
-                            max = abs(differ[x][y])
-                ave = sum/(X*Y)
-                plt.imsave(arr = differ,fname = '../data/modelPic/'+str(d)+'_'+str(h)+'_'+str(m)+'.png',format = 'png',origin = 'lower')
+                AVG = AVG + Data[d][h][m]
+                differ = Data[d][h][m] - TruthData[d][h]
+                plt.imsave(arr = differ,cmap='gray',fname = './data/modelPic/'+str(d)+'_'+str(h)+'_'+str(m)+'.png',format = 'png',origin = 'lower')
+                plt.imsave(arr = Data[d][h][m],cmap='gray',fname = './data/modelPic/'+str(d)+'_'+str(h)+'_'+str(m)+'_t' + '.png',format = 'png',origin = 'lower')
                 print('pic '+str(d)+'_'+str(h)+'_'+str(m)+'.png'+' saved')
-                print('sum differ = '+str(sum)+'\nave differ = '+str(ave)+'\nmax differ = '+str(max)+'\n for pic '+str(d)+'_'+str(h)+'_'+str(m)+'.png')
+            AVG = AVG / MODULE
+            plt.imsave(arr = AVG,cmap='gray',fname = './data/modelPic/'+str(d)+'_'+str(h)+'_avg'+'.png',format = 'png',origin = 'lower')
+            lm = (1 + (TruthData[d][h] >= 15) - (AVG >= 15)) * 10
+            plt.imsave(arr = lm,cmap='gray',fname = './data/modelPic/'+str(d)+'_'+str(h)+'_lm'+'.png',format = 'png',origin = 'lower')
+            plt.imsave(arr = (AVG >= 15),cmap='gray',fname = './data/modelPic/'+str(d)+'_'+str(h)+'_avg_b'+'.png',format = 'png',origin = 'lower')
 
-filePath = '../data/ForecastDataforTraining_201712.csv'
-tfilePath = '../data/In_situMeasurementforTraining_201712.csv'
+def draw_true(tfilePath):
+    TruthData = pd.read_csv(tfilePath)
+    TruthData = TruthData['wind'].values.reshape((DATE,HOUR,X,Y))
+    for d in range(DATE):
+        for h in range(HOUR):
+            plt.imsave(arr = TruthData[d][h],cmap='gray',fname = './data/modelPic/'+str(d)+'_'+str(h)+'.png',format = 'png',origin = 'lower')
+            plt.imsave(arr = (TruthData[d][h] >= 15),cmap='gray',fname = './data/modelPic/'+str(d)+'_'+str(h)+ '_b' +'.png',format = 'png',origin = 'lower')
+
+filePath = './data/ForecastDataforTraining_20171205/ForecastDataforTraining_201712.csv'
+tfilePath = './data/In_situMeasurementforTraining_20171205/In_situMeasurementforTraining_201712.csv'
 
 if __name__ == '__main__':
     drawDifference(filePath,tfilePath)
+    draw_true(tfilePath)
